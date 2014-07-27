@@ -1,0 +1,316 @@
+#!/usr/bin/env perl
+
+# NOTE:
+#
+# Must remove double-quotes from data before reporting and exporting.
+# They aren't escaped when saving the report as CSV.  The Text::CSV
+# module doesn't seem to handle them well.
+
+use warnings;
+use strict;
+
+use Text::CSV;
+use Date::Parse;
+use POSIX qw(strftime);
+
+my $csv = Text::CSV->new() or die Text::CSV->error_diag;
+
+# All transactions include all fields, whether or not they're needed.
+# During debugging, it's useful to dump the raw input data.  But we
+# don't need to dump things that don't matter.
+
+my %irrelevant_fields = (
+	'Credit Card Charge' => [
+		'',
+		'Action',
+		'Aging',
+		'Class',
+		'Due Date',
+		'Num',
+		'Paid',
+		'Qty',
+		'Billed Date',
+		'Billing Status',
+		'Deliv Date',
+		'Entered/Last Modified',
+		'FOB',
+		'Item Description',
+		'Item',
+		'Last modified by',
+		'P. O. #',
+		'Pay Meth',
+		'Print',
+		'Rep',
+		'Sales Price',
+		'Ship Date',
+		'State',
+		'Terms',
+		'Via',
+	],
+	'Bill'               => [ ],  # TODO - For dumping.
+	'Bill Pmt -Check'    => [ ],  # TODO - For dumping.
+	'Bill Pmt -CCard'    => [ ],  # TODO - For dumping.
+	'Invoice'            => [ ],  # TODO - For dumping.
+	'Deposit'            => [ ],  # TODO - For dumping.
+	'Payment'            => [ ],  # TODO - For dumping.
+	'Check'              => [ ],  # TODO - For dumping.
+	'Credit Card Credit' => [ ],  # TODO - For dumping.
+	'Credit'             => [ ],  # TODO - For dumping.
+);
+
+
+# It may become useful to process transactions differently based on
+# each transaction's type.  This table maps types to processors.
+
+my %transaction_processors = (
+	'Bill'               => \&process_all_others,
+	'Bill Pmt -Check'    => \&process_all_others,
+	'Bill Pmt -CCard'    => \&process_all_others,
+	'Credit Card Charge' => \&process_all_others,
+	'Invoice'            => \&process_invoice,
+	'Deposit'            => \&process_all_others,
+	'Payment'            => \&process_all_others,
+	'Check'              => \&process_all_others,
+	'Credit Card Credit' => \&process_all_others,
+	'Credit'             => \&process_all_others,
+);
+
+# Load chart of accounts.
+# The transaction history uses short names.
+# This will map the short names to full names and account types.
+
+my %accounts;
+{
+	my $accounts_file = "accounts.csv";
+
+	open my $fh, '<', $accounts_file or die "can't open $accounts_file: $!";
+
+	$csv->parse(scalar <$fh>);
+	my @column_names = $csv->fields();
+
+	while (<$fh>) {
+		$csv->parse($_);
+		my @column_values = $csv->fields();
+
+		my %account;
+		@account{@column_names} = @column_values;
+
+		my $short_account = $account{'Account'};
+		$short_account =~ s/^.*://;
+
+		if (exists $accounts{$short_account}) {
+			die(
+				"Short account $short_account refers to at least two long accounts:\n",
+				"  $accounts{$short_account}{Account}\n",
+				"  $account{Account}\n",
+			);
+		}
+
+		$accounts{$short_account} = \%account;
+	}
+}
+
+# Collect transactions into journal entries, then process each one.
+
+{
+	my $transaction_file = "all-txns.csv";
+
+	open my $fh, '<', $transaction_file or die "can't open $transaction_file: $!";
+
+	$csv->parse(scalar <$fh>);
+	my @column_names = $csv->fields();
+
+	my @pending_journal;
+
+	while (<$fh>) {
+		$csv->parse($_);
+		my @column_values = $csv->fields();
+
+		my %line_item;
+		@line_item{@column_names} = @column_values;
+
+		# Includes blank lines, for some reason.
+		my $transaction_number = $line_item{'Trans #'};
+		next unless length $transaction_number;
+		next if $transaction_number eq 'Total';
+
+		if (@pending_journal) {
+			if ($transaction_number != $pending_journal[0]{'Trans #'}) {
+				process_pending_journal(\@pending_journal);
+			}
+		}
+
+		push @pending_journal, \%line_item;
+	}
+
+	# One last one may have been accumulated without being processed.
+	process_pending_journal(\@pending_journal) if @pending_journal;
+}
+
+sub process_pending_journal {
+	my ($pending_journal) = @_;
+
+	all_must_match(
+		$pending_journal,
+		'Trans #', 'Type', 'Date', 'Entered/Last Modified', 'Source Name',
+	);
+
+	my $any_transaction    = $pending_journal->[0];
+	my $transaction_number = $any_transaction->{'Trans #'};
+
+	my $transaction_type = $any_transaction->{'Type'};
+	my $transaction_processor = $transaction_processors{$transaction_type};
+	my $journal_date = fix_date($any_transaction->{'Date'});
+
+	$transaction_processor->(
+		$transaction_type,
+		$transaction_number,
+		$journal_date,
+		$any_transaction,
+		$pending_journal,
+	);
+
+	# Clear out the journal entry's transaction buffer for the next one.
+	@$pending_journal = ();
+}
+
+# QuickBooks reports tend to be in the form MM/DD/YY.
+# Convert them to YYYY-MM-DD.
+
+sub fix_date {
+	strftime("%F", localtime str2time($_[0]));
+}
+
+# Default processing for all other transaction types.
+
+sub process_all_others {
+	my (
+		$transaction_type, $transaction_number, $journal_date,
+		$any_transaction, $journal
+	) = @_;
+
+	my $all_memos_match = do_all_match($journal, 'Memo');
+
+	my $payee_name = $any_transaction->{'Source Name'};
+	$payee_name = 'FIXME' if is_blank($payee_name);
+
+	print "$journal_date $payee_name\n";
+	if ($all_memos_match) {
+		print_memo($any_transaction) and print "\n";
+	}
+
+	foreach (@$journal) {
+		my $short_account = $_->{'Account'};
+		my $long_account  = $accounts{$short_account}{'Account'};
+		my $account_type  = $accounts{$short_account}{'Type'};
+
+		printf "  %s  \$%.2f", $long_account, $_->{'Amount'} || 0;
+		print_memo($_) unless $all_memos_match;
+		print "\n";
+	}
+}
+
+
+sub print_memo {
+	my ($posting) = @_;
+	my $memo = $posting->{'Memo'};
+	return if is_blank($memo);
+	print "  ; $memo";
+}
+
+
+sub process_invoice {
+	my (
+		$transaction_type, $transaction_number, $journal_date,
+		$any_transaction, $journal
+	) = @_;
+
+	my $invoice_number = $any_transaction->{'Num'} // 'unknown';
+	my $all_memos_match = do_all_match($journal, 'Memo');
+
+	my $payee_name = $any_transaction->{'Source Name'};
+	$payee_name = 'FIXME' if is_blank($payee_name);
+
+	printf(
+		"%s (%s) %s\n",
+		$journal_date, $invoice_number, $any_transaction->{'Source Name'}
+	);
+
+	if ($all_memos_match) {
+		print_memo($any_transaction) and print "\n";
+	}
+
+	foreach (@$journal) {
+		my $short_account = $_->{'Account'};
+		my $long_account  = $accounts{$short_account}{'Account'};
+		my $account_type  = $accounts{$short_account}{'Type'};
+
+		printf "  %s  \$%.2f", $long_account, $_->{'Amount'} || 0;
+		print_memo($_) unless $all_memos_match;
+		print "\n";
+	}
+}
+
+
+sub is_blank {
+	return 1 if not defined $_[0];
+	return 1 if not length $_[0];
+	return 0;
+}
+
+
+# Validate input data.  Some fields must match between all
+# transactions in a single journal entry.
+
+sub all_must_match {
+	my $pending_journal = shift();
+
+	FIELD: foreach my $field (@_) {
+		my $value;
+		TRANSACTION: foreach my $transaction (@$pending_journal) {
+			unless (defined $value) {
+				$value = $transaction->{$field};
+				next TRANSACTION;
+			}
+			unless ($transaction->{$field} eq $value) {
+				die(
+					"Transaction $pending_journal->[0]{'Trans #'} error:\n",
+					"  Field $field value changed.\n",
+					"  Was: $value\n",
+					"  Now: $transaction->{$field}\n",
+				);
+			}
+		}
+	}
+}
+
+sub do_all_match {
+	my $pending_journal = shift();
+
+	FIELD: foreach my $field (@_) {
+		my $value;
+		TRANSACTION: foreach my $transaction (@$pending_journal) {
+			unless (defined $value) {
+				$value = $transaction->{$field};
+				next TRANSACTION;
+			}
+
+			return unless $transaction->{$field} eq $value;
+		}
+	}
+
+	return 1;
+}
+
+# Debugging function to dump abbreviated items in a journal entry.
+# Irrelevant fields are removed to keep the output brief.
+
+sub dump_journal {
+	my ($journal) = @_;;
+
+	foreach (@$journal) {
+		delete @{$_}{ @{ $irrelevant_fields{$_->{'Type'}} } };
+	}
+
+	use YAML; print YAML::Dump($journal);
+}
