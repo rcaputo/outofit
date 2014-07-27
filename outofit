@@ -59,10 +59,10 @@ my %irrelevant_fields = (
 );
 
 
-# It may become useful to process transactions differently based on
-# each transaction's type.  This table maps types to processors.
+# It may become useful to process postings differently based on
+# each posting's type.  This table maps types to processors.
 
-my %transaction_processors = (
+my %posting_processors = (
 	'Bill'               => \&process_all_others,
 	'Bill Pmt -Check'    => \&process_all_others,
 	'Bill Pmt -CCard'    => \&process_all_others,
@@ -76,8 +76,9 @@ my %transaction_processors = (
 );
 
 # Load chart of accounts.
-# The transaction history uses short names.
+# QuickBooks exports postings with short names.
 # This will map the short names to full names and account types.
+# An error will be thrown on the occurrence of duplicate short names.
 
 my %accounts;
 {
@@ -110,12 +111,12 @@ my %accounts;
 	}
 }
 
-# Collect transactions into journal entries, then process each one.
+# Collect postings into journal entries, then process each one.
 
 {
-	my $transaction_file = "all-txns.csv";
+	my $postings_file = "all-txns.csv";
 
-	open my $fh, '<', $transaction_file or die "can't open $transaction_file: $!";
+	open my $fh, '<', $postings_file or die "can't open $postings_file: $!";
 
 	$csv->parse(scalar <$fh>);
 	my @column_names = $csv->fields();
@@ -126,21 +127,21 @@ my %accounts;
 		$csv->parse($_);
 		my @column_values = $csv->fields();
 
-		my %line_item;
-		@line_item{@column_names} = @column_values;
+		my %posting;
+		@posting{@column_names} = @column_values;
 
 		# Includes blank lines, for some reason.
-		my $transaction_number = $line_item{'Trans #'};
-		next unless length $transaction_number;
-		next if $transaction_number eq 'Total';
+		my $posting_number = $posting{'Trans #'};
+		next unless length $posting_number;
+		next if $posting_number eq 'Total';
 
 		if (@pending_journal) {
-			if ($transaction_number != $pending_journal[0]{'Trans #'}) {
+			if ($posting_number != $pending_journal[0]{'Trans #'}) {
 				process_pending_journal(\@pending_journal);
 			}
 		}
 
-		push @pending_journal, \%line_item;
+		push @pending_journal, \%posting;
 	}
 
 	# One last one may have been accumulated without being processed.
@@ -155,18 +156,18 @@ sub process_pending_journal {
 		'Trans #', 'Type', 'Date', 'Entered/Last Modified', 'Source Name',
 	);
 
-	my $any_transaction    = $pending_journal->[0];
-	my $transaction_number = $any_transaction->{'Trans #'};
+	my $any_posting    = $pending_journal->[0];
+	my $posting_number = $any_posting->{'Trans #'};
 
-	my $transaction_type = $any_transaction->{'Type'};
-	my $transaction_processor = $transaction_processors{$transaction_type};
-	my $journal_date = fix_date($any_transaction->{'Date'});
+	my $posting_type = $any_posting->{'Type'};
+	my $posting_processor = $posting_processors{$posting_type};
+	my $journal_date = fix_date($any_posting->{'Date'});
 
-	$transaction_processor->(
-		$transaction_type,
-		$transaction_number,
+	$posting_processor->(
+		$posting_type,
+		$posting_number,
 		$journal_date,
-		$any_transaction,
+		$any_posting,
 		$pending_journal,
 	);
 
@@ -185,18 +186,18 @@ sub fix_date {
 
 sub process_all_others {
 	my (
-		$transaction_type, $transaction_number, $journal_date,
-		$any_transaction, $journal
+		$posting_type, $posting_number, $journal_date,
+		$any_posting, $journal
 	) = @_;
 
 	my $all_memos_match = do_all_match($journal, 'Memo');
 
-	my $payee_name = $any_transaction->{'Source Name'};
+	my $payee_name = $any_posting->{'Source Name'};
 	$payee_name = 'FIXME' if is_blank($payee_name);
 
 	print "$journal_date $payee_name\n";
 	if ($all_memos_match) {
-		print_memo($any_transaction) and print "\n";
+		print_memo($any_posting) and print "\n";
 	}
 
 	foreach (@$journal) {
@@ -221,23 +222,23 @@ sub print_memo {
 
 sub process_invoice {
 	my (
-		$transaction_type, $transaction_number, $journal_date,
-		$any_transaction, $journal
+		$posting_type, $posting_number, $journal_date,
+		$any_posting, $journal
 	) = @_;
 
-	my $invoice_number = $any_transaction->{'Num'} // 'unknown';
+	my $invoice_number = $any_posting->{'Num'} // 'unknown';
 	my $all_memos_match = do_all_match($journal, 'Memo');
 
-	my $payee_name = $any_transaction->{'Source Name'};
+	my $payee_name = $any_posting->{'Source Name'};
 	$payee_name = 'FIXME' if is_blank($payee_name);
 
 	printf(
 		"%s (%s) %s\n",
-		$journal_date, $invoice_number, $any_transaction->{'Source Name'}
+		$journal_date, $invoice_number, $any_posting->{'Source Name'}
 	);
 
 	if ($all_memos_match) {
-		print_memo($any_transaction) and print "\n";
+		print_memo($any_posting) and print "\n";
 	}
 
 	foreach (@$journal) {
@@ -283,6 +284,10 @@ sub all_must_match {
 		}
 	}
 }
+
+
+# Determine if a particular field matches for all postings in a
+# journal entry.
 
 sub do_all_match {
 	my $pending_journal = shift();
