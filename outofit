@@ -186,16 +186,26 @@ sub fix_date {
 
 sub process_all_others {
 	my (
-		$posting_type, $posting_number, $journal_date,
-		$any_posting, $journal
+		$posting_type, $posting_number, $journal_date, $any_posting, $journal
 	) = @_;
 
 	my $all_memos_match = do_all_match($journal, 'Memo');
+	my $all_nums_match = do_all_match($journal, 'Num');
 
 	my $payee_name = $any_posting->{'Source Name'};
 	$payee_name = 'FIXME' if is_blank($payee_name);
 
-	print "$journal_date $payee_name\n";
+	print $journal_date;
+
+	if ($all_nums_match) {
+		my $journal_number = $any_posting->{'Num'};
+		unless (is_blank($journal_number)) {
+			print " ($any_posting->{'Type'} $journal_number)";
+		}
+	}
+
+	print " $payee_name\n";
+
 	if ($all_memos_match) {
 		print_memo($any_posting) and print "\n";
 	}
@@ -222,20 +232,25 @@ sub print_memo {
 
 sub process_invoice {
 	my (
-		$posting_type, $posting_number, $journal_date,
-		$any_posting, $journal
+		$posting_type, $posting_number, $journal_date, $any_posting, $journal
 	) = @_;
 
-	my $invoice_number = $any_posting->{'Num'} // 'unknown';
 	my $all_memos_match = do_all_match($journal, 'Memo');
+	my $all_nums_match = do_all_match($journal, 'Num');
 
 	my $payee_name = $any_posting->{'Source Name'};
 	$payee_name = 'FIXME' if is_blank($payee_name);
 
-	printf(
-		"%s (%s) %s\n",
-		$journal_date, $invoice_number, $any_posting->{'Source Name'}
-	);
+	print $journal_date;
+
+	if ($all_nums_match) {
+		my $invoice_number = $any_posting->{'Num'};
+		unless (is_blank($invoice_number)) {
+			print " ($any_posting->{'Type'} $invoice_number)";
+		}
+	}
+
+	print " $any_posting->{'Source Name'}\n";
 
 	if ($all_memos_match) {
 		print_memo($any_posting) and print "\n";
