@@ -13,67 +13,27 @@ use Text::CSV;
 use Date::Parse;
 use POSIX qw(strftime);
 
+use DumpJournal qw( dump_journal );
+
 my $csv = Text::CSV->new() or die Text::CSV->error_diag;
-
-# All transactions include all fields, whether or not they're needed.
-# During debugging, it's useful to dump the raw input data.  But we
-# don't need to dump things that don't matter.
-
-my %irrelevant_fields = (
-	'Credit Card Charge' => [
-		'',
-		'Action',
-		'Aging',
-		'Class',
-		'Due Date',
-		'Num',
-		'Paid',
-		'Qty',
-		'Billed Date',
-		'Billing Status',
-		'Deliv Date',
-		'Entered/Last Modified',
-		'FOB',
-		'Item Description',
-		'Item',
-		'Last modified by',
-		'P. O. #',
-		'Pay Meth',
-		'Print',
-		'Rep',
-		'Sales Price',
-		'Ship Date',
-		'State',
-		'Terms',
-		'Via',
-	],
-	'Bill'               => [ ],  # TODO - For dumping.
-	'Bill Pmt -Check'    => [ ],  # TODO - For dumping.
-	'Bill Pmt -CCard'    => [ ],  # TODO - For dumping.
-	'Invoice'            => [ ],  # TODO - For dumping.
-	'Deposit'            => [ ],  # TODO - For dumping.
-	'Payment'            => [ ],  # TODO - For dumping.
-	'Check'              => [ ],  # TODO - For dumping.
-	'Credit Card Credit' => [ ],  # TODO - For dumping.
-	'Credit'             => [ ],  # TODO - For dumping.
-);
-
 
 # It may become useful to process postings differently based on
 # each posting's type.  This table maps types to processors.
 
 my %posting_processors = (
-	'Bill'               => \&process_all_others,
-	'Bill Pmt -Check'    => \&process_all_others,
 	'Bill Pmt -CCard'    => \&process_all_others,
-	'Credit Card Charge' => \&process_all_others,
-	'Invoice'            => \&process_invoice,
-	'Deposit'            => \&process_all_others,
-	'Payment'            => \&process_all_others,
+	'Bill Pmt -Check'    => \&process_all_others,
+	'Bill'               => \&process_all_others,
 	'Check'              => \&process_all_others,
+	'Credit Card Charge' => \&process_all_others,
 	'Credit Card Credit' => \&process_all_others,
 	'Credit'             => \&process_all_others,
+	'Deposit'            => \&process_all_others,
+	'Invoice'            => \&process_invoice,
+	'Payment'            => \&process_all_others,
 );
+
+$_ = \&dump_journal foreach values %posting_processors;
 
 # Load chart of accounts.
 # QuickBooks exports postings with short names.
@@ -322,15 +282,3 @@ sub do_all_match {
 	return 1;
 }
 
-# Debugging function to dump abbreviated items in a journal entry.
-# Irrelevant fields are removed to keep the output brief.
-
-sub dump_journal {
-	my ($journal) = @_;;
-
-	foreach (@$journal) {
-		delete @{$_}{ @{ $irrelevant_fields{$_->{'Type'}} } };
-	}
-
-	use YAML; print YAML::Dump($journal);
-}
