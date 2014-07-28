@@ -1,0 +1,47 @@
+[X] 100% Incorporate all the fields.
+	[X] 100% All things
+		[X] 100% Determine globally irrelevant fields.
+			[X] 100% Dump postings in a one-field-per-line format (e.g. YAML)
+			[X] 100% Check cardinality of each field:
+				grep '^  Field:' dump.yml | sort | uniq -c
+			[X] 100% Add fields with insignificant cardinality to a global filter
+	[X] 100% Credit card charge
+	[X] 100% Bill Pmt -CCard
+	[X] 100% Bill Pmt -Check
+	[X] 100% Bill
+	[X] 100% Check
+	[X] 100% Credit Card Charge
+	[X] 100% Credit Card Credit
+	[X] 100% Credit
+	[X] 100% Deposit
+	[X] 100% Invoice
+	[X] 100% Payment
+[_] 0% Workflows
+	[_] 0% Enter a credit card charge
+		Initial state is uncleared (no flag character).
+	[_] 0% Reconcile a credit card statement
+		Moves each journal entry to "pending" ("!").
+	[_] 0% Generate a bill from a reconciled credit card
+		Collects all pending entries for the credit card account.
+		Consolidates them into a bill journal entry.
+		Marks all pending entries and cleared.
+	[_] 0% Pay bills.
+		[_] 0% Iterate through uncleared bills to pay them.
+			[_] 0% Iterate through uncleared bills.
+			[_] 0% Display information about each bill, so payments can be made.
+			[_] 0% Mark each bill as pending.
+			[_] 0% At the end, print the total for all the bills.
+		[_] 0% Confirm payments are made.
+			[_] 0% Prompt for total amount of payments.
+			[_] 0% Throw an error if it doesn't match the calculated total.
+			[_] 0% Iterate bills to confirm each payment.
+				[_] 0% Prompt for check number.
+				[_] 0% Update check number and flag as cleared.
+	[_] 0% Generate invoices.
+		TODO - How?
+[_] 0% Utilities
+	[_] 0% Consolidate transaction states.
+		[_] 0% Iterate the journal.
+		[_] 0% If the state of all postings patch...
+			[_] 0% Remove individual states.
+			[_] 0% Mark the whole transaction as pending or complete.
