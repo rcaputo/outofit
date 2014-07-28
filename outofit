@@ -30,7 +30,6 @@ my %posting_processors = (
 	'Credit'             => \&process_all_others,
 	'Deposit'            => \&process_all_others,
 	'Payment'            => \&process_all_others,
-
 	'Invoice'            => \&process_invoice,
 );
 
@@ -285,7 +284,10 @@ sub process_all_others {
 
 		print "  ";
 
-		unless (is_blank($_->{'Clr'})) {
+		if (is_blank($_->{'Clr'})) {
+			print "! " unless is_blank($_->{'Paid'});
+		}
+		else {
 			print "* ";
 		}
 
@@ -296,11 +298,22 @@ sub process_all_others {
 		print "\n";
 
 		print_billing_status_line($_);
+
+		my @number = (
+			grep { !is_blank($_) }
+			$_->{'Pay Meth'},
+			$_->{'Num'},
+		);
+
+		if (@number) {
+			print "  ; Number: @number\n";
+		}
 	}
 
 	delete_used_fields(
 		$journal,
-		'Account', 'Type', 'Amount', 'Clr', 'Memo', 'Name', 'Billing Status'
+		'Account', 'Type', 'Amount', 'Clr', 'Paid', 'Memo', 'Name',
+		'Billing Status', 'Num', 'Pay Meth'
 	);
 }
 
@@ -357,11 +370,30 @@ sub process_invoice {
 		}
 
 		print "\n";
+
+		# Name is an expense account name.
+
+		my $name = $_->{'Name'};
+		unless (is_blank($name)) {
+			my $long_name = $accounts{$name}{'Account'} // $name;
+
+			printf "  %s  \$%.2f", $long_name, -($_->{'Amount'} || 0);
+
+			if (@item_memo) {
+				print "  ; ", join(" / ", @item_memo);
+			}
+
+			print "\n";
+
+		}
 	}
 
 	delete_used_fields(
 		$journal,
-		'Item', 'Item Description', 'Memo', 'Account', 'Type', 'Amount',
+		'Item', 'Item Description', 'Memo', 'Account', 'Type', 'Amount', 'Name',
+		# These are useful, but I didn't use them, so I'm not porting them
+		# across.
+		'Qty', 'Sales Price', 'Aging', 'Ship Date',
 	);
 }
 
