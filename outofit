@@ -13,7 +13,9 @@ use Text::CSV;
 use Date::Parse;
 use POSIX qw(strftime);
 
-use DumpJournal qw( delete_unused_fields delete_used_fields dump_journal );
+use DumpTransaction qw(
+	delete_unused_fields delete_used_fields dump_transaction
+);
 
 my $csv = Text::CSV->new() or die Text::CSV->error_diag;
 
@@ -33,7 +35,7 @@ my %posting_processors = (
 	'Invoice'            => \&process_invoice,
 );
 
-#$_ = \&dump_journal foreach values %posting_processors;
+#$_ = \&dump_transaction foreach values %posting_processors;
 
 # Load chart of accounts.
 # QuickBooks exports postings with short names.
@@ -71,7 +73,7 @@ my %accounts;
 	}
 }
 
-# Collect postings into journal entries, then process each one.
+# Collect postings into transactions, then process each one.
 
 {
 	my $postings_file = "all-txns.csv";
@@ -81,7 +83,7 @@ my %accounts;
 	$csv->parse(scalar <$fh>);
 	my @column_names = $csv->fields();
 
-	my @pending_journal;
+	my @pending_transaction;
 
 	while (<$fh>) {
 		$csv->parse($_);
@@ -95,26 +97,27 @@ my %accounts;
 		next unless length $posting_number;
 		next if $posting_number eq 'Total';
 
-		if (@pending_journal) {
-			if ($posting_number != $pending_journal[0]{'Trans #'}) {
-				process_pending_journal(\@pending_journal);
+		if (@pending_transaction) {
+			if ($posting_number != $pending_transaction[0]{'Trans #'}) {
+				process_pending_transaction(\@pending_transaction);
 			}
 		}
 
-		push @pending_journal, \%posting;
+		push @pending_transaction, \%posting;
 	}
 
 	# One last one may have been accumulated without being processed.
-	process_pending_journal(\@pending_journal) if @pending_journal;
+	process_pending_transaction(\@pending_transaction) if @pending_transaction;
 }
 
 sub print_payee_line {
 	my (
-		$posting_type, $journal_date, $transaction_memo, $any_posting, $journal
+		$posting_type, $transaction_date, $transaction_memo, $any_posting,
+		$transaction
 	) = @_;
 
 	my $payee_name = $any_posting->{'Source Name'};
-	delete_used_fields($journal, 'Source Name');
+	delete_used_fields($transaction, 'Source Name');
 
 	if (is_blank($payee_name)) {
 		if (defined $transaction_memo) {
@@ -126,54 +129,54 @@ sub print_payee_line {
 		}
 	}
 
-	print $journal_date;
+	print $transaction_date;
 
-	my $all_cleared = is_consistent($journal, 'Clr');
+	my $all_cleared = is_consistent($transaction, 'Clr');
 	if ($all_cleared) {
 		my $cleared = $any_posting->{'Clr'};
 		print " *" unless is_blank($cleared);
-		delete_used_fields($journal, 'Clr', 'Paid');
+		delete_used_fields($transaction, 'Clr', 'Paid');
 	}
 	else {
-		my $all_pending = is_consistent($journal, 'Paid');
+		my $all_pending = is_consistent($transaction, 'Paid');
 		if ($all_pending) {
 			my $pending = $any_posting->{'Paid'};
 			print " !" unless is_blank($pending);
-			delete_used_fields($journal, 'Paid');
+			delete_used_fields($transaction, 'Paid');
 		}
 	}
 
-	print_num_if_available($any_posting, $journal);
+	print_num_if_available($any_posting, $transaction);
 
 	print " $payee_name\n";
 
 	if (defined $transaction_memo) {
 		print "  ; $transaction_memo\n";
 
-		delete_matching($journal, 'Memo', $transaction_memo);
+		delete_matching($transaction, 'Memo', $transaction_memo);
 	}
 
-	if (is_consistent($journal, 'Billing Status')) {
+	if (is_consistent($transaction, 'Billing Status')) {
 		print_billing_status_line($any_posting);
-		delete_used_fields($journal, 'Billing Status');
+		delete_used_fields($transaction, 'Billing Status');
 	}
 
-	if (is_consistent($journal, 'Due Date')) {
+	if (is_consistent($transaction, 'Due Date')) {
 		my $due_date = $any_posting->{'Due Date'};
 		unless (is_blank($due_date)) {
 			print "  ; Due: $due_date\n";
 		}
-		delete_used_fields($journal, 'Due Date');
+		delete_used_fields($transaction, 'Due Date');
 	}
 }
 
 sub calc_transaction_memo {
-	my ($any_posting, $journal) = @_;
+	my ($any_posting, $transaction) = @_;
 
-	return unless is_consistent($journal, 'Memo');
+	return unless is_consistent($transaction, 'Memo');
 
 	my $memo = $any_posting->{'Memo'};
-	delete_used_fields($journal, 'Memo');
+	delete_used_fields($transaction, 'Memo');
 
 	return if is_blank($memo);
 	return $memo;
@@ -215,37 +218,37 @@ sub print_billing_status_line {
 
 # Default processing for all other transaction types.
 
-sub process_pending_journal {
-	my ($pending_journal) = @_;
+sub process_pending_transaction {
+	my ($pending_transaction) = @_;
 
 	all_must_match(
-		$pending_journal,
+		$pending_transaction,
 		'Trans #', 'Type', 'Date', 'Entered/Last Modified', 'Source Name',
 	);
 
-	delete_unused_fields($pending_journal);
+	delete_unused_fields($pending_transaction);
 
-	my $any_posting    = $pending_journal->[0];
+	my $any_posting    = $pending_transaction->[0];
 	my $posting_number = $any_posting->{'Trans #'};
 
 	my $posting_type = $any_posting->{'Type'};
 	my $posting_processor = $posting_processors{$posting_type};
-	my $journal_date = fix_date($any_posting->{'Date'});
+	my $transaction_date = fix_date($any_posting->{'Date'});
 
 	$posting_processor->(
 		$posting_type,
 		$posting_number,
-		$journal_date,
+		$transaction_date,
 		$any_posting,
-		$pending_journal,
+		$pending_transaction,
 	);
 
 	# Verify that all parts of the input transaction were used.
 
-	delete_used_fields( $pending_journal, 'Trans #', 'Type', 'Date' );
+	delete_used_fields( $pending_transaction, 'Trans #', 'Type', 'Date' );
 
 	my %unused_fields;
-	foreach my $posting (@$pending_journal) {
+	foreach my $posting (@$pending_transaction) {
 		foreach my $field (keys %$posting) {
 			++$unused_fields{$field};
 		}
@@ -259,25 +262,26 @@ sub process_pending_journal {
 		);
 	}
 
-	# Clear out the journal entry's transaction buffer for the next one.
-	@$pending_journal = ();
+	# Clear out the pending transaction buffer for the next set of
+	# postings.
+	@$pending_transaction = ();
 }
 
 
 sub process_all_others {
 	my (
-		$posting_type, $posting_number, $journal_date, $any_posting,
-		$journal, $used_fields
+		$posting_type, $posting_number, $transaction_date, $any_posting,
+		$transaction, $used_fields
 	) = @_;
 
-	my $transaction_memo = calc_transaction_memo($any_posting, $journal);
+	my $transaction_memo = calc_transaction_memo($any_posting, $transaction);
 
 	print_payee_line(
-		$posting_type, $journal_date, $transaction_memo, $any_posting,
-		$journal, $used_fields
+		$posting_type, $transaction_date, $transaction_memo, $any_posting,
+		$transaction, $used_fields
 	);
 
-	foreach (@$journal) {
+	foreach (@$transaction) {
 		my $short_account = $_->{'Account'};
 		my $long_account  = $accounts{$short_account}{'Account'};
 		my $account_type  = $accounts{$short_account}{'Type'};
@@ -311,7 +315,7 @@ sub process_all_others {
 	}
 
 	delete_used_fields(
-		$journal,
+		$transaction,
 		'Account', 'Type', 'Amount', 'Clr', 'Paid', 'Memo', 'Name',
 		'Billing Status', 'Num', 'Pay Meth'
 	);
@@ -319,16 +323,18 @@ sub process_all_others {
 
 sub process_invoice {
 	my (
-		$posting_type, $posting_number, $journal_date, $any_posting, $journal
+		$posting_type, $posting_number, $transaction_date, $any_posting,
+		$transaction
 	) = @_;
 
-	my $transaction_memo = calc_transaction_memo($any_posting, $journal);
+	my $transaction_memo = calc_transaction_memo($any_posting, $transaction);
 
 	print_payee_line(
-		$posting_type, $journal_date, $transaction_memo, $any_posting, $journal
+		$posting_type, $transaction_date, $transaction_memo, $any_posting,
+		$transaction
 	);
 
-	foreach (@$journal) {
+	foreach (@$transaction) {
 		my $short_account = $_->{'Account'};
 		my $long_account  = $accounts{$short_account}{'Account'};
 		my $account_type  = $accounts{$short_account}{'Type'};
@@ -389,7 +395,7 @@ sub process_invoice {
 	}
 
 	delete_used_fields(
-		$journal,
+		$transaction,
 		'Item', 'Item Description', 'Memo', 'Account', 'Type', 'Amount', 'Name',
 		# These are useful, but I didn't use them, so I'm not porting them
 		# across.
@@ -399,21 +405,21 @@ sub process_invoice {
 
 
 sub print_num_if_available {
-	my ($any_posting, $journal) = @_;
+	my ($any_posting, $transaction) = @_;
 
-	return unless is_consistent($journal, 'Num');
+	return unless is_consistent($transaction, 'Num');
 
-	my $journal_number = $any_posting->{'Num'};
+	my $transaction_number = $any_posting->{'Num'};
 	my $type = $any_posting->{'Pay Meth'};
-	delete_used_fields($journal, 'Pay Meth', 'Num');
+	delete_used_fields($transaction, 'Pay Meth', 'Num');
 
-	return if is_blank($journal_number);
+	return if is_blank($transaction_number);
 
 	if (is_blank($type)) {
 		$type = $any_posting->{'Type'};
 	}
 
-	print " ($type $journal_number)";
+	print " ($type $transaction_number)";
 }
 
 
@@ -425,21 +431,21 @@ sub is_blank {
 
 
 # Validate input data.  Some fields must match between all
-# transactions in a single journal entry.
+# postings that comprise a transaction.
 
 sub all_must_match {
-	my $pending_journal = shift();
+	my $pending_transaction = shift();
 
 	FIELD: foreach my $field (@_) {
 		my $value;
-		TRANSACTION: foreach my $transaction (@$pending_journal) {
+		TRANSACTION: foreach my $transaction (@$pending_transaction) {
 			unless (defined $value) {
 				$value = $transaction->{$field};
 				next TRANSACTION;
 			}
 			unless ($transaction->{$field} eq $value) {
 				die(
-					"Transaction $pending_journal->[0]{'Trans #'} error:\n",
+					"Transaction $pending_transaction->[0]{'Trans #'} error:\n",
 					"  Field $field value changed.\n",
 					"  Was: $value\n",
 					"  Now: $transaction->{$field}\n",
@@ -451,8 +457,8 @@ sub all_must_match {
 
 
 sub delete_matching {
-	my ($journal, $field, $value) = @_;
-	foreach (@$journal) {
+	my ($transaction, $field, $value) = @_;
+	foreach (@$transaction) {
 		next if is_blank($_->{$field}) or $_->{$field} ne $value;
 		delete $_->{$field};
 	}
@@ -460,14 +466,14 @@ sub delete_matching {
 
 
 # Determine if a particular field matches for all postings in a
-# journal entry.
+# transaction.
 
 sub is_consistent {
-	my $pending_journal = shift();
+	my $pending_transaction = shift();
 
 	FIELD: foreach my $field (@_) {
 		my $value;
-		TRANSACTION: foreach my $transaction (@$pending_journal) {
+		TRANSACTION: foreach my $transaction (@$pending_transaction) {
 			unless (defined $value) {
 				$value = $transaction->{$field};
 				next TRANSACTION;
@@ -479,4 +485,3 @@ sub is_consistent {
 
 	return 1;
 }
-
