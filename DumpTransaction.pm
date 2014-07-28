@@ -1,9 +1,9 @@
-package DumpJournal;
+package DumpTransaction;
 
 use warnings;
 use strict;
 
-our @EXPORT_OK = qw( delete_used_fields delete_unused_fields dump_journal );
+our @EXPORT_OK = qw( delete_used_fields delete_unused_fields dump_transaction );
 use Exporter;
 use base 'Exporter';
 
@@ -131,27 +131,28 @@ my %irrelevant_fields = (
 );
 
 sub delete_unused_fields {
-	my ($journal) = @_;
-	foreach (@$journal) {
+	my ($transaction) = @_;
+	foreach (@$transaction) {
 		delete @{$_}{ @{ $irrelevant_fields{$_->{'Type'}} } };
 	}
 }
 
 sub delete_used_fields {
-	my ($journal) = shift();
-	delete @{$_}{ @_ } foreach @$journal;
+	my ($transaction) = shift();
+	delete @{$_}{ @_ } foreach @$transaction;
 }
 
-# Debugging function to dump abbreviated items in a journal entry.
+# Debugging function to dump abbreviated items in a transaction.
 # Irrelevant fields are removed to keep the output brief.
 
-sub dump_journal {
+sub dump_transaction {
 	my (
-		$posting_type, $posting_number, $journal_date, $any_posting, $journal
+		$transaction_type, $transaction_number, $transaction_date,
+		$any_posting, $transaction
 	) = @_;
 
-	#use YAML::Syck; print YAML::Syck::Dump($journal);
-	use JSON::XS; print( encode_json($_), "\n") foreach @$journal;
+	#use YAML::Syck; print YAML::Syck::Dump($transaction);
+	use JSON::XS; print( encode_json($_), "\n") foreach @$transaction;
 }
 
 1;

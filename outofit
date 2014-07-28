@@ -112,7 +112,7 @@ my %accounts;
 
 sub print_payee_line {
 	my (
-		$posting_type, $transaction_date, $transaction_memo, $any_posting,
+		$transaction_type, $transaction_date, $transaction_memo, $any_posting,
 		$transaction
 	) = @_;
 
@@ -231,12 +231,12 @@ sub process_pending_transaction {
 	my $any_posting    = $pending_transaction->[0];
 	my $posting_number = $any_posting->{'Trans #'};
 
-	my $posting_type = $any_posting->{'Type'};
-	my $posting_processor = $posting_processors{$posting_type};
+	my $transaction_type = $any_posting->{'Type'};
+	my $posting_processor = $posting_processors{$transaction_type};
 	my $transaction_date = fix_date($any_posting->{'Date'});
 
 	$posting_processor->(
-		$posting_type,
+		$transaction_type,
 		$posting_number,
 		$transaction_date,
 		$any_posting,
@@ -256,7 +256,7 @@ sub process_pending_transaction {
 
 	if (scalar keys %unused_fields) {
 		warn(
-			"$posting_type $posting_number didn't use all the fields: ",
+			"$transaction_type $posting_number didn't use all the fields: ",
 			join(" ", map { "($_)" } sort keys %unused_fields),
 			"\n"
 		);
@@ -270,14 +270,14 @@ sub process_pending_transaction {
 
 sub process_all_others {
 	my (
-		$posting_type, $posting_number, $transaction_date, $any_posting,
+		$transaction_type, $posting_number, $transaction_date, $any_posting,
 		$transaction, $used_fields
 	) = @_;
 
 	my $transaction_memo = calc_transaction_memo($any_posting, $transaction);
 
 	print_payee_line(
-		$posting_type, $transaction_date, $transaction_memo, $any_posting,
+		$transaction_type, $transaction_date, $transaction_memo, $any_posting,
 		$transaction, $used_fields
 	);
 
@@ -323,14 +323,14 @@ sub process_all_others {
 
 sub process_invoice {
 	my (
-		$posting_type, $posting_number, $transaction_date, $any_posting,
+		$transaction_type, $posting_number, $transaction_date, $any_posting,
 		$transaction
 	) = @_;
 
 	my $transaction_memo = calc_transaction_memo($any_posting, $transaction);
 
 	print_payee_line(
-		$posting_type, $transaction_date, $transaction_memo, $any_posting,
+		$transaction_type, $transaction_date, $transaction_memo, $any_posting,
 		$transaction
 	);
 
