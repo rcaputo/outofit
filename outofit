@@ -13,7 +13,7 @@ use Text::CSV;
 use Date::Parse;
 use POSIX qw(strftime);
 
-use DumpJournal qw( dump_journal );
+use DumpJournal qw( delete_unused_fields delete_used_fields dump_journal );
 
 my $csv = Text::CSV->new() or die Text::CSV->error_diag;
 
@@ -29,11 +29,12 @@ my %posting_processors = (
 	'Credit Card Credit' => \&process_all_others,
 	'Credit'             => \&process_all_others,
 	'Deposit'            => \&process_all_others,
-	'Invoice'            => \&process_invoice,
 	'Payment'            => \&process_all_others,
+
+	'Invoice'            => \&process_invoice,
 );
 
-$_ = \&dump_journal foreach values %posting_processors;
+#$_ = \&dump_journal foreach values %posting_processors;
 
 # Load chart of accounts.
 # QuickBooks exports postings with short names.
@@ -108,6 +109,113 @@ my %accounts;
 	process_pending_journal(\@pending_journal) if @pending_journal;
 }
 
+sub print_payee_line {
+	my (
+		$posting_type, $journal_date, $transaction_memo, $any_posting, $journal
+	) = @_;
+
+	my $payee_name = $any_posting->{'Source Name'};
+	delete_used_fields($journal, 'Source Name');
+
+	if (is_blank($payee_name)) {
+		if (defined $transaction_memo) {
+			$payee_name = $transaction_memo;
+			$transaction_memo = undef;
+		}
+		else {
+			$payee_name = 'FIXME';
+		}
+	}
+
+	print $journal_date;
+
+	my $all_cleared = is_consistent($journal, 'Clr');
+	if ($all_cleared) {
+		my $cleared = $any_posting->{'Clr'};
+		print " *" unless is_blank($cleared);
+		delete_used_fields($journal, 'Clr', 'Paid');
+	}
+	else {
+		my $all_pending = is_consistent($journal, 'Paid');
+		if ($all_pending) {
+			my $pending = $any_posting->{'Paid'};
+			print " !" unless is_blank($pending);
+			delete_used_fields($journal, 'Paid');
+		}
+	}
+
+	print_num_if_available($any_posting, $journal);
+
+	print " $payee_name\n";
+
+	if (defined $transaction_memo) {
+		print "  ; $transaction_memo\n";
+
+		delete_matching($journal, 'Memo', $transaction_memo);
+	}
+
+	if (is_consistent($journal, 'Billing Status')) {
+		print_billing_status_line($any_posting);
+		delete_used_fields($journal, 'Billing Status');
+	}
+
+	if (is_consistent($journal, 'Due Date')) {
+		my $due_date = $any_posting->{'Due Date'};
+		unless (is_blank($due_date)) {
+			print "  ; Due: $due_date\n";
+		}
+		delete_used_fields($journal, 'Due Date');
+	}
+}
+
+sub calc_transaction_memo {
+	my ($any_posting, $journal) = @_;
+
+	return unless is_consistent($journal, 'Memo');
+
+	my $memo = $any_posting->{'Memo'};
+	delete_used_fields($journal, 'Memo');
+
+	return if is_blank($memo);
+	return $memo;
+}
+
+
+sub print_memo {
+	my ($posting) = @_;
+
+	my %seen;
+
+	my @memo = (
+		grep { !is_blank($_) && !$seen{$_}++ }
+		$posting->{'Name'},
+		$posting->{'Memo'},
+	);
+
+	return unless @memo;
+
+	print "  ; ", join( " / ", @memo);
+}
+
+
+###
+
+# QuickBooks reports tend to be in the form MM/DD/YY.
+# Convert them to YYYY-MM-DD.
+
+sub fix_date {
+	strftime("%F", localtime str2time($_[0]));
+}
+
+sub print_billing_status_line {
+	my $billing_status = $_[0]{'Billing Status'};
+	return if is_blank($billing_status);
+	$billing_status =~ s/\s+(\S)/\U$1/g;
+	print "  ; :$billing_status:\n";
+}
+
+# Default processing for all other transaction types.
+
 sub process_pending_journal {
 	my ($pending_journal) = @_;
 
@@ -115,6 +223,8 @@ sub process_pending_journal {
 		$pending_journal,
 		'Trans #', 'Type', 'Date', 'Entered/Last Modified', 'Source Name',
 	);
+
+	delete_unused_fields($pending_journal);
 
 	my $any_posting    = $pending_journal->[0];
 	my $posting_number = $any_posting->{'Trans #'};
@@ -131,90 +241,79 @@ sub process_pending_journal {
 		$pending_journal,
 	);
 
+	# Verify that all parts of the input transaction were used.
+
+	delete_used_fields( $pending_journal, 'Trans #', 'Type', 'Date' );
+
+	my %unused_fields;
+	foreach my $posting (@$pending_journal) {
+		foreach my $field (keys %$posting) {
+			++$unused_fields{$field};
+		}
+	}
+
+	if (scalar keys %unused_fields) {
+		warn(
+			"$posting_type $posting_number didn't use all the fields: ",
+			join(" ", map { "($_)" } sort keys %unused_fields),
+			"\n"
+		);
+	}
+
 	# Clear out the journal entry's transaction buffer for the next one.
 	@$pending_journal = ();
 }
 
-# QuickBooks reports tend to be in the form MM/DD/YY.
-# Convert them to YYYY-MM-DD.
-
-sub fix_date {
-	strftime("%F", localtime str2time($_[0]));
-}
-
-# Default processing for all other transaction types.
 
 sub process_all_others {
 	my (
-		$posting_type, $posting_number, $journal_date, $any_posting, $journal
+		$posting_type, $posting_number, $journal_date, $any_posting,
+		$journal, $used_fields
 	) = @_;
 
-	my $all_memos_match = do_all_match($journal, 'Memo');
-	my $all_nums_match = do_all_match($journal, 'Num');
+	my $transaction_memo = calc_transaction_memo($any_posting, $journal);
 
-	my $payee_name = $any_posting->{'Source Name'};
-	$payee_name = 'FIXME' if is_blank($payee_name);
-
-	print $journal_date;
-
-	if ($all_nums_match) {
-		my $journal_number = $any_posting->{'Num'};
-		unless (is_blank($journal_number)) {
-			print " ($any_posting->{'Type'} $journal_number)";
-		}
-	}
-
-	print " $payee_name\n";
-
-	if ($all_memos_match) {
-		print_memo($any_posting) and print "\n";
-	}
+	print_payee_line(
+		$posting_type, $journal_date, $transaction_memo, $any_posting,
+		$journal, $used_fields
+	);
 
 	foreach (@$journal) {
 		my $short_account = $_->{'Account'};
 		my $long_account  = $accounts{$short_account}{'Account'};
 		my $account_type  = $accounts{$short_account}{'Type'};
 
-		printf "  %s  \$%.2f", $long_account, $_->{'Amount'} || 0;
-		print_memo($_) unless $all_memos_match;
+		print "  ";
+
+		unless (is_blank($_->{'Clr'})) {
+			print "* ";
+		}
+
+		printf "%s  \$%.2f", $long_account, $_->{'Amount'} || 0;
+
+		print_memo($_) unless defined $transaction_memo;
+
 		print "\n";
+
+		print_billing_status_line($_);
 	}
+
+	delete_used_fields(
+		$journal,
+		'Account', 'Type', 'Amount', 'Clr', 'Memo', 'Name', 'Billing Status'
+	);
 }
-
-
-sub print_memo {
-	my ($posting) = @_;
-	my $memo = $posting->{'Memo'};
-	return if is_blank($memo);
-	print "  ; $memo";
-}
-
 
 sub process_invoice {
 	my (
 		$posting_type, $posting_number, $journal_date, $any_posting, $journal
 	) = @_;
 
-	my $all_memos_match = do_all_match($journal, 'Memo');
-	my $all_nums_match = do_all_match($journal, 'Num');
+	my $transaction_memo = calc_transaction_memo($any_posting, $journal);
 
-	my $payee_name = $any_posting->{'Source Name'};
-	$payee_name = 'FIXME' if is_blank($payee_name);
-
-	print $journal_date;
-
-	if ($all_nums_match) {
-		my $invoice_number = $any_posting->{'Num'};
-		unless (is_blank($invoice_number)) {
-			print " ($any_posting->{'Type'} $invoice_number)";
-		}
-	}
-
-	print " $any_posting->{'Source Name'}\n";
-
-	if ($all_memos_match) {
-		print_memo($any_posting) and print "\n";
-	}
+	print_payee_line(
+		$posting_type, $journal_date, $transaction_memo, $any_posting, $journal
+	);
 
 	foreach (@$journal) {
 		my $short_account = $_->{'Account'};
@@ -222,15 +321,73 @@ sub process_invoice {
 		my $account_type  = $accounts{$short_account}{'Type'};
 
 		printf "  %s  \$%.2f", $long_account, $_->{'Amount'} || 0;
-		print_memo($_) unless $all_memos_match;
+
+		# The most basic item memo comprises the QuickBooks item and its
+		# description.
+
+		my @item_memo = (
+			grep { !is_blank($_) }
+			(
+				delete($_->{'Item'}),
+				delete($_->{'Item Description'}),
+			)
+		);
+
+		# Extended memos include QuickBooks memo text, unless the memo is
+		# identical to the item description.  Identical descriptions and
+		# memos happen a lot in my ledger.
+		#
+		# TODO - I have some paraphrased memos.  I think it would be
+		# useful to determine whether all the words on the memo are in the
+		# description, or vice versa, and to use the longer of the two.
+		# This seems like it would eliminate a manual edit pass through
+		# the invoice transactions.
+
+		unless (defined $transaction_memo) {
+			my $memo = delete $_->{'Memo'};
+			if (@item_memo and not is_blank($memo)) {
+				if ($memo ne $item_memo[-1]) {
+					push @item_memo, $memo;
+				}
+			}
+		}
+
+		if (@item_memo) {
+			print "  ; ", join(" / ", @item_memo);
+		}
+
 		print "\n";
 	}
+
+	delete_used_fields(
+		$journal,
+		'Item', 'Item Description', 'Memo', 'Account', 'Type', 'Amount',
+	);
+}
+
+
+sub print_num_if_available {
+	my ($any_posting, $journal) = @_;
+
+	return unless is_consistent($journal, 'Num');
+
+	my $journal_number = $any_posting->{'Num'};
+	my $type = $any_posting->{'Pay Meth'};
+	delete_used_fields($journal, 'Pay Meth', 'Num');
+
+	return if is_blank($journal_number);
+
+	if (is_blank($type)) {
+		$type = $any_posting->{'Type'};
+	}
+
+	print " ($type $journal_number)";
 }
 
 
 sub is_blank {
 	return 1 if not defined $_[0];
-	return 1 if not length $_[0];
+	return 1 if $_[0] =~ /^\s*$/;
 	return 0;
 }
 
@@ -261,10 +418,19 @@ sub all_must_match {
 }
 
 
+sub delete_matching {
+	my ($journal, $field, $value) = @_;
+	foreach (@$journal) {
+		next if is_blank($_->{$field}) or $_->{$field} ne $value;
+		delete $_->{$field};
+	}
+}
+
+
 # Determine if a particular field matches for all postings in a
 # journal entry.
 
-sub do_all_match {
+sub is_consistent {
 	my $pending_journal = shift();
 
 	FIELD: foreach my $field (@_) {

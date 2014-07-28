@@ -1,7 +1,7 @@
 test-1.ldg: accounts.csv all-txns.csv
 	./outofit > test-1.ldg
 
-test-2.ldg: outofit accounts.csv all-txns.csv
+test-2.ldg: outofit DumpJournal.pm accounts.csv all-txns.csv
 	./outofit > test-2.ldg
 
 test.one: test-1.ldg

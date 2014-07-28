@@ -3,7 +3,7 @@ package DumpJournal;
 use warnings;
 use strict;
 
-our @EXPORT_OK = qw( dump_journal );
+our @EXPORT_OK = qw( delete_used_fields delete_unused_fields dump_journal );
 use Exporter;
 use base 'Exporter';
 
@@ -17,6 +17,8 @@ my @globally_irrelevant_fields = (
 	'Balance',
 	'Billed Date',
 	'Class',
+	'Credit',
+	'Debit',
 	'Deliv Date',
 	'Entered/Last Modified',
 	'Estimate Active',
@@ -26,6 +28,7 @@ my @globally_irrelevant_fields = (
 	'P. O. #',
 	'Print',
 	'Rep',
+	'Split',  # TODO - Is this really not necessary?
 	'State',
 	'Terms',
 	'Via',
@@ -127,6 +130,18 @@ my %irrelevant_fields = (
 	],
 );
 
+sub delete_unused_fields {
+	my ($journal) = @_;
+	foreach (@$journal) {
+		delete @{$_}{ @{ $irrelevant_fields{$_->{'Type'}} } };
+	}
+}
+
+sub delete_used_fields {
+	my ($journal) = shift();
+	delete @{$_}{ @_ } foreach @$journal;
+}
+
 # Debugging function to dump abbreviated items in a journal entry.
 # Irrelevant fields are removed to keep the output brief.
 
@@ -135,12 +150,8 @@ sub dump_journal {
 		$posting_type, $posting_number, $journal_date, $any_posting, $journal
 	) = @_;
 
-	foreach (@$journal) {
-		delete @{$_}{ @{ $irrelevant_fields{$_->{'Type'}} } };
-	}
-
-	use YAML::Syck; print YAML::Syck::Dump($journal);
-	#use JSON::XS; print( encode_json($_), "\n") foreach @$journal;
+	#use YAML::Syck; print YAML::Syck::Dump($journal);
+	use JSON::XS; print( encode_json($_), "\n") foreach @$journal;
 }
 
 1;
