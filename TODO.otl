@@ -16,6 +16,14 @@
 	[X] 100% Deposit
 	[X] 100% Invoice
 	[X] 100% Payment
+[_] 0% Release
+	[_] 0% Put it into the App namespace.
+	[_] 0% Modularize more.
+	[_] 0% Configure dzil.
+	[_] 0% Write tests.
+	[_] 0% Write documentation.
+[_] 0% Refine field usage
+	[_] 0% If a memo has all the words of the description, don't bother with it.
 [_] 0% Workflows
 	[_] 0% Enter a credit card charge
 		Initial state is uncleared (no flag character).
