@@ -116,23 +116,21 @@ sub as_journal {
 }
 
 
+use Data::LedgerCLI::Parsers qw( parse_date parse_effective_date );
+
 sub new_from_journal {
 	my ($class, $ledger) = @_;
 
 	my @constructor_args;
 
-	croak "Can't parse transaction date from '$_[1]'" unless(
-		$ledger =~ s/^(\d\d\d\d)-(\d\d)-(\d\d)//
-	);
+	# 4.7.1: Transaction begins with a line that begins with a digit.
+	my $date = parse_date($ledger);
+	croak "Can't parse transaction date from '$_[1]'" unless defined $date;
+	push @constructor_args, ( date => $date );
 
-	push @constructor_args, (
-		date => DateTime->new( year => $1, month => $2, day => $3 )
-	);
-
-	if ($ledger =~ s/^=(\d\d\d\d)-(\d\d)-(\d\d)//) {
-		push @constructor_args, (
-			effective_date => DateTime->new( year => $1, month => $2, day => $3 )
-		);
+	my $effective_date = parse_effective_date($ledger);
+	if (defined $effective_date) {
+		push @constructor_args, ( effective_date => $effective_date );
 	}
 
 	if ($ledger =~ s/^\s*\*//) {

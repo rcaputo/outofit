@@ -177,13 +177,14 @@ sub new_from_journal {
 
 	my @constructor_args;
 
-	unless ($ledger =~ s/^\s*(\S.*?)\s\s//) {
+	# 4.1: Account is terminated by either two spaces or a tab.
+	unless ($ledger =~ s/^\s*(\S.*?)(?:\s*  \s*|\t\s*)//) {
 		croak "Can't parse account from '$_[1]'";
 	}
 
 	push @constructor_args, ( account => $1 );
 
-	unless ($ledger =~ s/^\s*([\$]?)(-?\d\S*)//) {
+	unless ($ledger =~ s/^\s*([\$]?)\s*(-?)\s*([,.\d]+)//) {
 		croak "Can't parse amount from '$_[1]'";
 	}
 
