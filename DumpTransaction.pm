@@ -128,12 +128,16 @@ my %irrelevant_fields = (
 		@not_due,
 		@not_payable,
 	],
+	'General Journal' => [
+		@globally_irrelevant_fields,
+		@not_an_invoice,
+	],
 );
 
 sub delete_unused_fields {
 	my ($transaction) = @_;
 	foreach (@$transaction) {
-		delete @{$_}{ @{ $irrelevant_fields{$_->{'Type'}} } };
+		delete @{$_}{ @{ $irrelevant_fields{$_->{'Type'}} // [] } };
 	}
 }
 

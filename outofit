@@ -32,6 +32,7 @@ my %posting_processors = (
 	'Credit'             => \&process_all_others,
 	'Deposit'            => \&process_all_others,
 	'Payment'            => \&process_all_others,
+	'General Journal'    => \&process_all_others,
 	'Invoice'            => \&process_invoice,
 );
 
@@ -235,6 +236,10 @@ sub process_pending_transaction {
 	my $posting_processor = $posting_processors{$transaction_type};
 	my $transaction_date = fix_date($any_posting->{'Date'});
 
+	unless (defined $posting_processor) {
+		die "no posting processor for transaction type '$transaction_type'";
+	}
+
 	$posting_processor->(
 		$transaction_type,
 		$posting_number,
@@ -285,6 +290,10 @@ sub process_all_others {
 		my $short_account = $_->{'Account'};
 		my $long_account  = $accounts{$short_account}{'Account'};
 		my $account_type  = $accounts{$short_account}{'Type'};
+
+		unless (defined $long_account) {
+			die "No long account for short account '$short_account'";
+		}
 
 		print "  ";
 
