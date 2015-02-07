@@ -1,0 +1,109 @@
+#!/usr/bin/env perl
+
+use warnings;
+use strict;
+
+use List::Util qw(max);
+
+my @transactions;
+my $payee;
+
+### First pass.
+#
+# Read the unsorted ledger, and normalize on a line by line basis.
+
+while (<>) {
+	chomp;
+
+	# Sorry, blank lines and top level comments.
+	next if /^\s*$/;
+	next if /^;/;  # TODO - Other comment characters.
+
+	# Start a new transaction.
+	if (/^\S/) {
+		my ($date, $status, $number, $comment);
+		$date    = (s/^(\d\d\d\d-\d\d-\d\d)\s+// ? $1 : undef);
+		$status  = (s/^([!*])\s+//               ? $1 : undef);
+		$number  = (s/^\(\s*([^)]+?)\s*\)\s*//   ? $1 : undef);
+		$payee   = (s/^(\S.*?)\s*(;|$)/$2/       ? $1 : undef);
+		$comment = (s/^;\s*(\S.*?)\s*$//         ? $1 : undef);
+
+		push @transactions, [ [ [ $date, $status, $number, $payee, $comment ] ] ];
+		next;
+	}
+
+	# Comment on the last item in a transaction.
+	if (s/^\s*;\s*//) {
+		push @{ $transactions[-1][-1] }, [ undef, undef, undef, $_ ];
+		next;
+	}
+
+	my $original_line = $_;
+	die "malformed ledger item ($original_line)" unless s/^  //;
+
+	my $status = (s/^([*!])\s+// ? $1 : undef);
+
+	my ($account, $amount, $comment);
+
+	if (s/^(\S.*?)  +(\$.*?)\s*;\s*(\S.*?)\s*$//) {
+		($account, $amount, $comment) = ($1, $2, $3);
+	}
+	elsif (s/^(\S.*?)  +(\$.*?)\s*$//) {
+		($account, $amount, $comment) = ($1, $2, undef);
+	}
+	else {
+		die "malformed ledger item ($original_line)";
+	}
+
+	$comment = (s/^;\s*(\S.*?)\s*$// ? $1 : undef);
+
+	push @{ $transactions[-1] }, [
+		[ $status, $account, $amount, $comment ],
+	];
+}
+
+### Third pass.
+#
+# Sorting, formatting, and output.
+
+foreach my $transaction (
+	sort {
+		( ($a->[0][0][0] // '') cmp ($b->[0][0][0] // '') ) ||
+		( ($a->[0][0][3] // '') cmp ($b->[0][0][3] // '') ) ||
+		( ($a->[0][0][2] // '') cmp ($b->[0][0][2] // '') )
+	}
+	@transactions
+) {
+	my $payee = shift @$transaction;
+	my $payee_line = shift @$payee;
+
+	print $payee_line->[0];
+	print ' ', $payee_line->[1] if defined $payee_line->[1];
+	print ' (', $payee_line->[2], ')' if defined $payee_line->[2];
+	print ' ', ($payee_line->[3] // 'FIXME');
+	print( defined($payee_line->[4]) ?  "  ; $payee_line->[4]\n" : "\n" );
+
+	print "  ; $_->[3]\n" foreach @$payee;
+
+	my $status_length  = max( map { length($_->[0][0] // '') } @$transaction );
+	my $account_length = max( map { length($_->[0][1] // '') } @$transaction );
+	my $amount_length  = max( map { length($_->[0][2] // '') } @$transaction );
+
+	foreach my $item (sort { $a->[0][1] cmp $b->[0][1] } @$transaction ) {
+		foreach (@$item) {
+			if ($account_length and defined $_->[1]) {
+				print '  ';
+				if ($status_length) {
+					printf "%-${status_length}s ", ($_->[0] // '');
+				}
+				printf "%-${account_length}s  %${amount_length}s", $_->[1], $_->[2];
+			}
+			else {
+				print "  ; $_->[3]" if defined $_->[3];
+			}
+			print "\n";
+		}
+	}
+}
+
+exit;
