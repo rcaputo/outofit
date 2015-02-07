@@ -1,0 +1,73 @@
+#!/usr/bin/env perl
+
+use warnings;
+use strict;
+
+use Text::CSV;
+
+my $csv = Text::CSV->new() or die Text::CSV->error_diag();
+
+use constant {
+	DATE     => 0,
+	NUMBER   => 1,
+	NAME     => 2,
+	ACCOUNT  => 3,
+	CURRENCY => 4,
+	AMOUNT   => 5,
+	STATUS   => 6,
+	NOTES    => 7,
+};
+
+my %register_by_amount;
+my @register;
+
+while (<>) {
+	chomp;
+	$csv->parse($_);
+
+	my @fields = $csv->fields();
+	my $count = push @register, \@fields;
+
+	push @{ $register_by_amount{$fields[AMOUNT]} }, \@fields;
+}
+
+my $i = 0;
+while ($i < @register) {
+	my $amount = $register[$i][AMOUNT];
+	unless (defined $amount) {
+		++$i;
+		next;
+	}
+
+	unless (exists $register_by_amount{$amount}) {
+		++$i;
+		next;
+	}
+
+	my $reciprocal_amount = -$amount;
+	unless (exists $register_by_amount{$reciprocal_amount}) {
+		++$i;
+		next;
+	}
+
+	my $amount_rec = $register_by_amount{$amount};
+	my $reciprocal_rec = $register_by_amount{$reciprocal_amount};
+
+	unless (@$reciprocal_rec == @$amount_rec) {
+		++$i;
+		next;
+	}
+
+	foreach (@$reciprocal_rec, @$amount_rec) {
+		$_->[AMOUNT] = undef;
+	}
+
+	delete $register_by_amount{$amount};
+	delete $register_by_amount{$reciprocal_amount};
+}
+
+foreach (@register) {
+	next unless defined $_->[AMOUNT];
+
+	$csv->combine(@$_) and print $csv->string(), "\n";
+}
