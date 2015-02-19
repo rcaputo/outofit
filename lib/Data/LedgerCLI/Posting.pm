@@ -1,7 +1,6 @@
 package Data::LedgerCLI::Posting;
 
 use Moose;
-use DateTime;
 use Carp qw(croak);
 
 
@@ -98,13 +97,13 @@ has cost_per_unit => (
 
 has actual_date => (
 	is => 'rw',
-	isa => 'DateTime',
+	isa => 'Str',
 );
 
 
 has effective_date => (
 	is => 'rw',
-	isa => 'DateTime',
+	isa => 'Str',
 );
 
 
@@ -205,15 +204,11 @@ sub new_from_journal {
 		if ($note =~ s/^\s*\[([-\d=\s]*)\]\s*//) {
 			my $date = $1;
 			if ($date =~ s/^\s*(\d\d\d\d)-(\d\d)-(\d\d)//) {
-				push @constructor_args, (
-					actual_date => DateTime->new( year => $1, month => $2, day => $3 )
-				);
+				push @constructor_args, ( actual_date => "$1-$2-$3" );
 			}
 
 			if ($date =~ s/^\s*=\s*(\d\d\d\d)-(\d\d)-(\d\d)//) {
-				push @constructor_args, (
-					effective_date => DateTime->new( year => $1, month => $2, day => $3 )
-				);
+				push @constructor_args, ( effective_date => "$1-$2-$3" );
 			}
 
 			if ($date =~ /\S/) {

@@ -1,7 +1,6 @@
 package Data::LedgerCLI::Transaction;
 
 use Moose;
-use DateTime;
 use Carp qw(croak);
 
 has comments => (
@@ -24,13 +23,13 @@ has postings => (
 
 has date => (
 	is => 'rw',
-	isa => 'DateTime',
+	isa => 'Str',
 	required => 1,
 );
 
 has effective_date => (
 	is => 'rw',
-	isa => 'DateTime',
+	isa => 'Str',
 );
 
 
@@ -84,10 +83,10 @@ sub as_journal {
 		$output .= "; $_\n";
 	}
 
-	$output .= $self->date()->ymd();
+	$output .= $self->date();
 
 	if (defined $self->effective_date()) {
-		$output .= '=' . $self->effective_date()->ymd();
+		$output .= '=' . $self->effective_date();
 	}
 
 	if ($self->cleared()) {
