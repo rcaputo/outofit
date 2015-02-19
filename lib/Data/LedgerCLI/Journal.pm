@@ -67,7 +67,7 @@ sub append_from_file_handle {
 		}
 
 		# Comment for the preceding posting.
-		if (/^\s+;\s*(\S.*?)\s*$/) {
+		if (/^\s+;\s*(\S?.*?)\s*$/) {
 			if (@{ $pending_transaction->postings() }) {
 				my $pending_posting = $pending_transaction->postings()->[-1];
 				$pending_posting->append_comment($1);

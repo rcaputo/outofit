@@ -110,7 +110,7 @@ has effective_date => (
 
 sub append_comment {
 	my ($self, $comment) = @_;
-	push @{ $self->comments() }, $comment;
+	push @{ $self->comments() }, $comment // '';
 }
 
 
