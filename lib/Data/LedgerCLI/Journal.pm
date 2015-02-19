@@ -108,7 +108,7 @@ sub append_from_file_handle {
 				@pending_transaction_comments = ();
 			}
 
-			print "| (Tr) ", $pending_transaction->as_journal(), "\n";
+			print "| (Tr) ", $pending_transaction->as_journal();
 			next;
 		}
 
@@ -136,6 +136,11 @@ sub append_from_file_handle {
 		}
 
 		print "- (??) $_\n";
+	}
+
+	if ($pending_transaction) {
+		$self->append_transaction( $pending_transaction );
+		$pending_transaction = undef;
 	}
 }
 
