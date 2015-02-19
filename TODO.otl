@@ -53,3 +53,38 @@
 		[_] 0% If the state of all postings patch...
 			[_] 0% Remove individual states.
 			[_] 0% Mark the whole transaction as pending or complete.
+	[_] 0% Validate cash flow procedures.
+		[_] 0% Iterate the journal.
+		[_] 0% Make sure cash flow within each transaction is sensible.
+			[_] 0% Bill
+				[_] 0% Bill Received
+					Out: Accounts Payable:ACCOUNT
+					In: Expenses:ACCOUNT
+				[_] 0% Bill Payment
+					Out: Assets:ACCOUNT
+					In: Accounts Payable:ACCOUNT
+			[_] 0% Credit Card
+				[_] 0% Credit Card Purchase
+					Out: Liabilities:Credit Cards:ACCOUNT
+					In: Expenses:ACCOUNT
+				[_] 0% Credit Card Statement Reconciliation
+					Out: Accounts Payable:ACCOUNT
+					IN: Liabilities:Credit Cards:ACCOUNT
+				[_] 0% Credit Card Statement Payment
+					Out: Assets:ACCOUNT
+					In: Accounts Payable:ACCOUNT
+			Reimbursable Credit Card Expenses
+				[_] 0% Credit Card Purchase
+					Out: Liabilities:Credit Cards:ACCOUNT
+					In: Expenses:Reimbursable:CLIENT:ACCOUNT
+				[_] 0% Invoice CLIENT
+					Out: Expenses:Reimbursable:CLIENT:ACCOUNT
+					In: Accounts Receivable:CLIENT:ACCOUNT
+				[_] 0% Receive Payment
+					Out: Accounts Receivable:CLIENT:ACCOUNT
+					In: Undeposited Funds:CLIENT:ACCOUNT
+			[_] 0% Deposit Payment
+				Out: Undeposited Funds:CLIENT:ACCOUNT
+				In: Assets:ACCOUNT
+
+
