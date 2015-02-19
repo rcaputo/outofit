@@ -2,6 +2,7 @@ package Data::LedgerCLI::Journal;
 
 use Moose;
 use Data::LedgerCLI::Transaction;
+use Data::LedgerCLI::Comment;
 use Data::LedgerCLI::Posting;
 
 has transactions => (
@@ -49,10 +50,15 @@ sub append_from_file_handle {
 
 		if (s/^[;#%|*]\s*//) {
 
-			if ($pending_transaction) {
+			if (
+				$pending_transaction and not
+				$pending_transaction->isa("Data::LedgerCLI::Comment")
+			) {
 				$self->append_transaction( $pending_transaction );
 				$pending_transaction = undef;
 			}
+
+			$pending_transaction //= Data::LedgerCLI::Comment->new();
 
 			push @{ $pending_transaction->comments() }, $_;
 
