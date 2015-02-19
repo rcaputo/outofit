@@ -17,6 +17,17 @@ has currency => (
 	default => '$',
 );
 
+
+has sign => (
+	is => 'ro',
+	isa => 'Str',
+	default => '',
+);
+
+
+# TODO - Track significant digits instead of assuming so many decimal
+# places.
+
 has amount => (
 	is => 'ro',
 	isa => 'Str',
@@ -128,7 +139,9 @@ sub as_journal {
 		$output .= $self->account();
 	}
 
-	$output .= '  ' . $self->currency() . $self->amount();
+	my $rendered_amount = $self->amount();
+	$rendered_amount =~ s/(\.\d\d+?)0*$/$1/;
+	$output .= '  ' . $self->currency() . $self->sign() . $rendered_amount;
 
 	if (defined $self->cost_per_unit()) {
 		$output .= ' @ ' . $self->cost_per_unit();
@@ -177,18 +190,19 @@ sub new_from_journal {
 	my @constructor_args;
 
 	# 4.1: Account is terminated by either two spaces or a tab.
-	unless ($ledger =~ s/^\s*(\S.*?)(?:\s*  \s*|\t\s*)//) {
+	unless ($ledger =~ s/^\s*(\S.*?)(?:\s*  \s*|\s*\t\s*)//) {
 		croak "Can't parse account from '$_[1]'";
 	}
 
 	push @constructor_args, ( account => $1 );
 
-	unless ($ledger =~ s/^\s*([\$]?)\s*(-?)\s*([,.\d]+)//) {
+	unless ($ledger =~ s/^\s*(\$)?\s*(-?)\s*([,.\d]+)//) {
 		croak "Can't parse amount from '$_[1]'";
 	}
 
 	push @constructor_args, ( currency => $1 ) if defined $1;
-	push @constructor_args, ( amount => $2 );
+	push @constructor_args, ( sign => $2 ) if defined $2;
+	push @constructor_args, ( amount => $3 ) if defined $3;
 
 
 	if ($ledger =~ s/^\s*\@\@\s*(\d\S*)//) {
