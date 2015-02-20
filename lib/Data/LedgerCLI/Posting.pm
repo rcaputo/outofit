@@ -2,6 +2,22 @@ package Data::LedgerCLI::Posting;
 
 use Moose;
 use Carp qw(croak);
+use Data::Money;
+
+# TODO: Setter that clears pending.
+has cleared => (
+	is => 'rw',
+	isa => 'Bool',
+	default => 0,
+);
+
+
+# TODO: Setter that clears cleared.
+has pending => (
+	is => 'rw',
+	isa => 'Bool',
+	default => 0,
+);
 
 
 has account => (
@@ -11,51 +27,10 @@ has account => (
 );
 
 
-has currency => (
-	is => 'ro',
-	isa => 'Str',
-	default => '$',
-);
-
-
-has sign => (
-	is => 'ro',
-	isa => 'Str',
-	default => '',
-);
-
-
-# TODO - Track significant digits instead of assuming so many decimal
-# places.
-
 has amount => (
 	is => 'ro',
-	isa => 'Str',
+	isa => 'Data::Money',
 	required => 1,
-	trigger => sub {
-		my ($self, $value) = @_;
-
-		my ($w, $f) = split(/\./, $value, 2);
-
-		if (defined $w) {
-			$w =~ s/^0+//;
-			$w = '0' unless length $w;
-		}
-		else {
-			$w = '0';
-		}
-
-		if (defined $f) {
-			$f =~ s/0+$//;
-			# TODO: Decide whether to truncate $f if it's too long.
-			$f .= '0' x ($self->places() - length($f));
-		}
-		else {
-			$f = '0' x $self->places();
-		};
-
-		$_[1] = $w . '.' . $f;
-	},
 );
 
 
@@ -140,8 +115,9 @@ sub as_journal {
 	}
 
 	my $rendered_amount = $self->amount();
-	$rendered_amount =~ s/(\.\d\d+?)0*$/$1/;
-	$output .= '  ' . $self->currency() . $self->sign() . $rendered_amount;
+	$rendered_amount =~ s/^-\$/\$-/;
+
+	$output .= '  ' . $rendered_amount;
 
 	if (defined $self->cost_per_unit()) {
 		$output .= ' @ ' . $self->cost_per_unit();
@@ -189,6 +165,14 @@ sub new_from_journal {
 
 	my @constructor_args;
 
+	# Account begins with a cleared/pending flag.  Optional.
+	if ($ledger =~ s/^\s*\*//) {
+		push @constructor_args, ( cleared => 1 );
+	}
+	elsif ($ledger =~ s/^\s*!//) {
+		push @constructor_args, ( pending => 1 );
+	}
+
 	# 4.1: Account is terminated by either two spaces or a tab.
 	unless ($ledger =~ s/^\s*(\S.*?)(?:\s*  \s*|\s*\t\s*)//) {
 		croak "Can't parse account from '$_[1]'";
@@ -200,9 +184,8 @@ sub new_from_journal {
 		croak "Can't parse amount from '$_[1]'";
 	}
 
-	push @constructor_args, ( currency => $1 ) if defined $1;
-	push @constructor_args, ( sign => $2 ) if defined $2;
-	push @constructor_args, ( amount => $3 ) if defined $3;
+	# TODO - Currency type.
+	push @constructor_args, ( amount => Data::Money->new( value => "$2$3" ) );
 
 
 	if ($ledger =~ s/^\s*\@\@\s*(\d\S*)//) {

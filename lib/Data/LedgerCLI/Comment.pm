@@ -22,6 +22,16 @@ sub as_journal {
 }
 
 
+sub headline_as_journal {
+	my ($self) = @_;
+	return $self->as_journal();
+}
+
+
+# None, but the API should be consistent.
+sub sum_of_posting_amounts { return () }
+
+
 __PACKAGE__->meta()->make_immutable();
 
 1;

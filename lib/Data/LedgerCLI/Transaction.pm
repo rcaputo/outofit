@@ -2,6 +2,14 @@ package Data::LedgerCLI::Transaction;
 
 use Moose;
 use Carp qw(croak);
+use Data::LedgerCLI::Parsers qw( parse_date parse_effective_date );
+
+
+has line_number => (
+	is => 'rw',
+	isa => 'Int',
+);
+
 
 has comments => (
 	is => 'ro',
@@ -9,11 +17,13 @@ has comments => (
 	default => sub { [] },
 );
 
+
 has payee_comments => (
 	is => 'ro',
 	isa => 'ArrayRef[Str]',
 	default => sub { [] },
 );
+
 
 has postings => (
 	is       => 'ro',
@@ -21,11 +31,13 @@ has postings => (
 	default => sub { [] },
 );
 
+
 has date => (
 	is => 'rw',
 	isa => 'Str',
 	required => 1,
 );
+
 
 has effective_date => (
 	is => 'rw',
@@ -75,7 +87,7 @@ sub append_payee_comment {
 }
 
 
-sub as_journal {
+sub headline_as_journal {
 	my ($self) = @_;
 
 	my $output = '';
@@ -103,6 +115,15 @@ sub as_journal {
 
 	$output .= ' ' . $self->payee() . "\n";
 
+	return $output;
+}
+
+
+sub as_journal {
+	my ($self) = @_;
+
+	my $output = $self->headline_as_journal();
+
 	foreach (@{ $self->payee_comments() }) {
 		$output .= "  ; $_\n";
 	}
@@ -114,8 +135,6 @@ sub as_journal {
 	return $output;
 }
 
-
-use Data::LedgerCLI::Parsers qw( parse_date parse_effective_date );
 
 sub new_from_journal {
 	my ($class, $ledger) = @_;
@@ -148,6 +167,34 @@ sub new_from_journal {
 	push @constructor_args, ( payee => $ledger );
 
 	return $class->new( @constructor_args );
+}
+
+
+sub contains_posting_account {
+	my ($self, $regexp) = @_;
+
+	foreach (@{ $self->postings() }) {
+		return 1 if $_->account() =~ $regexp;
+	}
+
+	return;
+}
+
+
+sub sum_of_posting_amounts {
+	my ($self, @regexps) = @_;
+
+	# Returns undef if none match.
+	my @sums;
+	foreach my $t (@{ $self->postings() }) {
+		foreach my $ir (0..$#regexps) {
+			next unless $t->account() =~ $regexps[$ir];
+			$sums[$ir] //= 0;
+			$sums[$ir] += $t->amount();
+		}
+	}
+
+	return @sums;
 }
 
 

@@ -5,6 +5,15 @@ use Data::LedgerCLI::Transaction;
 use Data::LedgerCLI::Comment;
 use Data::LedgerCLI::Posting;
 
+use constant DEBUG => 0;
+
+
+has transaction_index => (
+	is => 'rw',
+	isa => 'Int',
+);
+
+
 has transactions => (
 	is      => 'rw',
 	isa     => 'ArrayRef[Data::LedgerCLI::Transaction]',
@@ -62,7 +71,7 @@ sub append_from_file_handle {
 
 			push @{ $pending_transaction->comments() }, $_;
 
-			print "| (TC) $_\n";
+			DEBUG and print "| (TC) $_\n";
 			next;
 		}
 
@@ -76,7 +85,7 @@ sub append_from_file_handle {
 				$pending_transaction->append_payee_comment($1);
 			}
 
-			print "| (PC) $_\n";
+			DEBUG and print "| (PC) $_\n";
 			next;
 		}
 
@@ -86,7 +95,7 @@ sub append_from_file_handle {
 			my $posting = Data::LedgerCLI::Posting->new_from_journal($_);
 			$pending_transaction->append_posting($posting);
 
-			print "| (Po) ", $posting->as_journal(), "\n";
+			DEBUG and print "| (Po) ", $posting->as_journal(), "\n";
 			next;
 		}
 
@@ -98,6 +107,7 @@ sub append_from_file_handle {
 			}
 
 			$pending_transaction = Data::LedgerCLI::Transaction->new_from_journal($_);
+			$pending_transaction->line_number( $. );
 
 			if (@pending_transaction_comments) {
 				push(
@@ -108,40 +118,57 @@ sub append_from_file_handle {
 				@pending_transaction_comments = ();
 			}
 
-			print "| (Tr) ", $pending_transaction->as_journal();
+			DEBUG and print "| (Tr) ", $pending_transaction->as_journal();
 			next;
 		}
 
 		# Historical price for a commodity.
 		if (/^P/) {
-			print "- (HP) $_\n";
+			DEBUG and print "- (HP) $_\n";
 			next;
 		}
 
 		# Automated transaction.
 		if (/^=/) {
-			print "- (AT) $_\n";
+			DEBUG and print "- (AT) $_\n";
 			next;
 		}
 
 		# Periodic transaction.
 		if (/^~/) {
-			print "- (PT) $_\n";
+			DEBUG and print "- (PT) $_\n";
 			next;
 		}
 
 		if (/^\s*$/) {
-			print "| (BL) $_\n";
+			DEBUG and print "| (BL) $_\n";
 			next;
 		}
 
-		print "- (??) $_\n";
+		DEBUG and print "- (??) $_\n";
 	}
 
 	if ($pending_transaction) {
 		$self->append_transaction( $pending_transaction );
 		$pending_transaction = undef;
 	}
+}
+
+
+
+sub reset_iterator {
+	my ($self) = @_;
+	$self->transaction_index( 0 );
+}
+
+
+sub next_transaction {
+	my ($self) = @_;
+	return if $self->transaction_index() >= @{ $self->transactions() };
+	my $i = $self->transaction_index();
+	my $next_transaction = $self->transactions()->[ $i ];
+	$self->transaction_index( $i + 1 );
+	return $next_transaction;
 }
 
 
